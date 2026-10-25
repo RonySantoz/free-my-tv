@@ -191,9 +191,10 @@ final class HomeData {
         return instance;
     }
 
-    final double[] prices = {Double.NaN, Double.NaN, Double.NaN, Double.NaN};
-    /** 24 h change (%), in the same order. */
-    final double[] changes = {Double.NaN, Double.NaN, Double.NaN, Double.NaN};
+    /** One per COINS entry. */
+    final double[] prices = {Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN};
+    /** 7-day change (%), in the same order. */
+    final double[] changes = {Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN};
     volatile long pricesAt, weatherAt;
     volatile Weather weather = new Weather();
 
