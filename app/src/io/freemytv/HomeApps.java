@@ -20,6 +20,7 @@ import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.graphics.Typeface;
 import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
 import android.media.tv.TvContract;
@@ -194,10 +195,24 @@ final class HomeApps {
 
     /** A card on the shelf that opens an HDMI input (a console on that port). */
     private static Item shelfInput(Context c, String number, String label, String inputId) {
-        Item it = special(c, INPUT, "hdmi" + number, label, "gamepad");
+        Item it = shortcut(INPUT, "hdmi" + number, label, "gamepad");
         it.inputId = inputId;
         it.number = number;
+        it.setTile(labelTile(label));
         return it;
+    }
+
+    /** A dark card with the name written on it (the shelf's cards are logos; an input has none). */
+    private static Bitmap labelTile(String label) {
+        Bitmap b = darkTile(TILE_W, TILE_H);
+        Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+        text.setColor(0xF2FFFFFF);
+        text.setTypeface(Typeface.DEFAULT_BOLD);
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(TILE_H * 0.17f);
+        new Canvas(b).drawText(label, TILE_W / 2f, TILE_H / 2f - (text.descent() + text.ascent()) / 2f, text);
+        b.setHasMipMap(true);
+        return b;
     }
 
     private static String[] known(String pkg) {

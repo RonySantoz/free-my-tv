@@ -88,9 +88,18 @@ final class HomeData {
         return Ui.tr(COIN_NAMES[i]);
     }
 
-    /** brapi.dev quotes both funds in one call; the key goes in the Authorization header, never in the address. */
-    private static String getPrices() throws IOException {
-        return get("https://brapi.dev/api/quote/" + COINS[0] + "," + COINS[1], "Bearer " + Config.BRAPI_KEY);
+    /**
+     * brapi.dev answers one ticker per request (a list is refused with HTTP 400), so each fund is asked for alone. The
+     * key goes in the Authorization header, never in the address.
+     */
+    private static String getPrices() throws Exception {
+        JSONArray all = new JSONArray();
+        for (String coin : COINS) {
+            JSONArray results = new JSONObject(get("https://brapi.dev/api/quote/" + coin, "Bearer " + Config.BRAPI_KEY))
+                    .getJSONArray("results");
+            for (int i = 0; i < results.length(); i++) all.put(results.get(i));
+        }
+        return new JSONObject().put("results", all).toString();
     }
 
     static final class Weather {
