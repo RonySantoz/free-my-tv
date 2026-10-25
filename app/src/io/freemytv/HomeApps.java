@@ -89,12 +89,6 @@ final class HomeApps {
      * art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
      */
     private static final String[][] SHELF = {
-        {"netflix", "Netflix", "com.netflix.ninja", "E50914", "", "1"},
-        {"youtube", "YouTube", "com.google.android.youtube.tv", "FF0033", "play", "1"},
-        {"youtube", "YouTube", "com.amazon.firetv.youtube", "FF0033", "play", "1"},
-        {"prime", "Prime Video", "com.amazon.amazonvideo.livingroom", "1A98FF", "tint", "0.96"},
-        {"prime", "Prime Video", "com.amazon.firebat", "1A98FF", "tint", "0.96"},
-        {"prime", "Prime Video", "com.amazon.avod", "1A98FF", "tint", "0.96"},
         {"disney", "Disney+", "com.disney.disneyplus", "1838C8", "", "1"},
         {"max", "Max", "com.wbd.stream", "6C3BE0", "", "1.32"},
         {"max", "HBO Max", "com.hbo.hbonow", "6C3BE0", "", "1.32"},
@@ -167,6 +161,9 @@ final class HomeApps {
         List<Item> items = new ArrayList<>();
         PackageManager pm = c.getPackageManager();
         int max = maxShelf(c);
+        // The first two cards are the HDMI ports of the consoles (Philco: HDMI 1 Switch, HDMI 3 PlayStation).
+        items.add(shelfInput(c, "1", "Nintendo Switch", "com.mediatek.tvinput/.hdmi.HDMIInputService/HW4"));
+        items.add(shelfInput(c, "3", "PlayStation", "com.mediatek.tvinput/.hdmi.HDMIInputService/HW6"));
         for (String pkg : shelfPackages(c)) {
             if (items.size() >= max) break;
             Intent launch = launchIntent(pm, pkg);
@@ -193,6 +190,14 @@ final class HomeApps {
             items.add(it);
         }
         return items;
+    }
+
+    /** A card on the shelf that opens an HDMI input (a console on that port). */
+    private static Item shelfInput(Context c, String number, String label, String inputId) {
+        Item it = special(c, INPUT, "hdmi" + number, label, "gamepad");
+        it.inputId = inputId;
+        it.number = number;
+        return it;
     }
 
     private static String[] known(String pkg) {

@@ -22,8 +22,23 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$RUNNER_TEMP/sdk" \
             "build-tools;34.0.0" "platforms;android-34" > /dev/null
           echo "ANDROID_HOME=$RUNNER_TEMP/sdk" >> "$GITHUB_ENV"
+      # The fund prices need the brapi key, kept as the repository secret BRAPI_KEY (Settings → Secrets → Actions).
+      - name: Settings (config.properties)
+        env:
+          BRAPI_KEY: ${{ secrets.BRAPI_KEY }}
+        run: |
+          cat > config.properties <<EOF
+          brapi_key=$BRAPI_KEY
+          city=Caieiras
+          latitude=-23.36
+          longitude=-46.74
+          tmdb_region=BR
+          currency=BRL
+          temperature=C
+          language=pt
+          EOF
       - name: Build
-        run: ./build.sh --generic
+        run: ./build.sh
       - uses: actions/upload-artifact@v4
         with:
           name: FreeMyTV-apk

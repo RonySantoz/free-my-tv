@@ -29,21 +29,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Optional crypto prices (Binance, every 5 min) and weather/sunrise/sunset (Open-Meteo, every 30 min), cached
+ * Prices of two B3 funds (brapi.dev, every 5 min) and weather/sunrise/sunset (Open-Meteo, every 30 min), cached
  * so the screen opens with numbers. Only fetched while the home screen or the screensaver is visible (the screen asks).
- * Neither source needs a key. Location and currency come from config.properties.
+ * The fund prices need the brapi key (brapi_key in config.properties); Open-Meteo needs none. Location and currency
+ * come from config.properties.
  */
 final class HomeData {
-    static final String[] COINS = {"BTC", "ETH", "SOL", "USDT"};
-    static final String[] COIN_NAMES = {"Bitcoin", "Ethereum", "Solana", "Dollar"};
+    /** AUPO11 (fixed income) and ABTC11 (Bitcoin). Drawn as their tickers, see Glyphs. */
+    static final String[] COINS = {"AUPO11", "ABTC11"};
+    static final String[] COIN_NAMES = {"Fixed income", "Bitcoin"};
     private static final String CURRENCY = Place.currency();
-    /** Binance has no pairs in some currencies (INR...) and then refuses the whole request: prices go in dollars instead. */
-    private static volatile boolean inDollars;
 
-    /** Binance quotes dollars as USDT. */
-    private static String quote() {
-        return CURRENCY.equals("USD") || inDollars ? "USDT" : CURRENCY;
-    }
     // Both forecasts in one answer, the next 48 hours and today plus 5 days: Home Settings → Forecast switches without
     // asking again, and offline too.
     private static final String WEATHER_QUERY = "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code"
@@ -59,28 +55,24 @@ final class HomeData {
     private static final long PRICES_EVERY = 5 * 60_000L, WEATHER_EVERY = 30 * 60_000L;
     interface Listener { void onData(); }
 
-    /** BTC, ETH and SOL; in Brazilian reais also the dollar (USDT/BRL), which Binance doesn't list for most currencies. */
+    /** The funds on the screen: none without the brapi key. */
     static int coinCount() {
-        return Prefs.quotes() ? active().length : 0;
+        return Prefs.quotes() && !Config.BRAPI_KEY.isEmpty() ? active().length : 0;
     }
 
     private static volatile int[] activeCoins;
     private static volatile int activeVersion = -1;
-    private static volatile boolean activeInDollars;
 
-    /** Indexes in COINS of the coins the user has on (and that Binance lists in this currency). */
+    /** Indexes in COINS of the funds the user has on. */
     static int[] active() {
         int[] a = activeCoins;
-        boolean dollars = inDollars;
-        if (a != null && activeVersion == Prefs.version && activeInDollars == dollars) return a;
+        if (a != null && activeVersion == Prefs.version) return a;
         int n = 0;
         int[] tmp = new int[COINS.length];
-        // The dollar only in reais, not in dollars: USDTUSDT isn't a pair, and Binance would refuse the whole request.
-        for (int i = 0; i < COINS.length; i++) if (Prefs.coin(i) && (i < 3 || CURRENCY.equals("BRL") && !dollars)) tmp[n++] = i;
+        for (int i = 0; i < COINS.length; i++) if (Prefs.coin(i)) tmp[n++] = i;
         a = java.util.Arrays.copyOf(tmp, n);
         activeCoins = a;
         activeVersion = Prefs.version;
-        activeInDollars = dollars;
         return a;
     }
 
@@ -93,33 +85,12 @@ final class HomeData {
     }
 
     static String coinName(int i) {
-        return i == 3 ? Ui.tr("Dollar") : COIN_NAMES[i];
+        return Ui.tr(COIN_NAMES[i]);
     }
 
-    /** Binance.com refuses the US (HTTP 451); Binance.US answers the same call in dollars. */
-    private static final String[] PRICE_HOSTS = {"https://api.binance.com", "https://api.binance.us"};
-
-    private static String pricesPath() {
-        StringBuilder symbols = new StringBuilder();
-        int[] coins = active();
-        for (int i = 0; i < coins.length; i++) symbols.append(i == 0 ? "" : ",").append("%22").append(COINS[coins[i]]).append(quote()).append("%22");
-        return "/api/v3/ticker/24hr?type=MINI&symbols=%5B" + symbols + "%5D";
-    }
-
+    /** brapi.dev quotes both funds in one call; the key goes in the Authorization header, never in the address. */
     private static String getPrices() throws IOException {
-        IOException failed = null;
-        for (String host : PRICE_HOSTS) {
-            try {
-                return get(host + pricesPath());
-            } catch (IOException e) {
-                // Binance.US has only dollar pairs: its error counts only where Binance.com refuses the US (HTTP 451).
-                // After a timeout or a 5xx there, its HTTP 400 would put the prices in dollars for good.
-                if (failed == null || "HTTP 451".equals(failed.getMessage())) failed = e;
-                // A pair Binance doesn't list (HTTP 400) isn't a refusal: the caller falls back to dollars instead.
-                if ("HTTP 400".equals(e.getMessage())) break;
-            }
-        }
-        throw failed;
+        return get("https://brapi.dev/api/quote/" + COINS[0] + "," + COINS[1], "Bearer " + Config.BRAPI_KEY);
     }
 
     static final class Weather {
@@ -163,7 +134,6 @@ final class HomeData {
 
     private HomeData(Context c) {
         cache = c.getSharedPreferences("homedata", Context.MODE_PRIVATE);
-        inDollars = CURRENCY.equals(cache.getString("dollarsFor", ""));
         try {
             if (Prefs.quotes()) {
                 String p = cache.getString("prices", null);
@@ -192,16 +162,7 @@ final class HomeData {
             fetchingPrices = true;
             io.execute(() -> {
                 try {
-                    String body;
-                    try {
-                        body = getPrices();
-                    } catch (IOException e) {
-                        if (inDollars || CURRENCY.equals("USD") || !"HTTP 400".equals(e.getMessage())) throw e;
-                        inDollars = true;
-                        cache.edit().putString("dollarsFor", CURRENCY).apply();
-                        AppLog.w("prices: Binance has no " + CURRENCY + " pairs, using dollars");
-                        body = getPrices();
-                    }
+                    String body = getPrices();
                     parsePrices(body);
                     pricesAt = System.currentTimeMillis();
                     cache.edit().putString("prices", body).putLong("pricesAt", pricesAt).apply();
@@ -246,22 +207,19 @@ final class HomeData {
     }
 
     private void parsePrices(String body) throws Exception {
-        JSONArray list = new JSONArray(body);
-        String quote = quote();
+        JSONArray list = new JSONObject(body).getJSONArray("results");
         int found = 0;
         for (int i = 0; i < list.length(); i++) {
             JSONObject o = list.getJSONObject(i);
             String symbol = o.getString("symbol");
             for (int k = 0; k < COINS.length; k++) {
-                if (!symbol.equals(COINS[k] + quote)) continue;
+                if (!symbol.equals(COINS[k])) continue;
                 found++;
-                double last = Double.parseDouble(o.optString("lastPrice", o.optString("price", "NaN")));
-                double open = Double.parseDouble(o.optString("openPrice", "NaN"));
-                prices[k] = last;
-                changes[k] = open > 0 ? (last - open) / open * 100 : Double.NaN;
+                prices[k] = o.getDouble("regularMarketPrice");
+                changes[k] = o.optDouble("regularMarketChangePercent", Double.NaN);
             }
         }
-        if (found == 0) pricesAt = 0;   // cached in another currency (config changed): fetch again
+        if (found == 0) pricesAt = 0;   // nothing usable came back: fetch again
     }
 
     private static Weather parseWeather(String body) throws Exception {
@@ -340,10 +298,15 @@ final class HomeData {
     }
 
     private static String get(String url) throws IOException {
+        return get(url, null);
+    }
+
+    private static String get(String url, String authorization) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(6000);
         c.setReadTimeout(6000);
         c.setRequestProperty("User-Agent", "FreeMyTV");
+        if (authorization != null) c.setRequestProperty("Authorization", authorization);
         try {
             if (c.getResponseCode() != 200) throw new IOException("HTTP " + c.getResponseCode());
             try (InputStream in = c.getInputStream()) {
@@ -440,7 +403,7 @@ final class HomeData {
     }
 
     private static String currencySymbol() {
-        switch (inDollars ? "USD" : CURRENCY) {
+        switch (CURRENCY) {
             case "USD": return "$";
             case "BRL": return "R$ ";
             case "EUR": return "€";

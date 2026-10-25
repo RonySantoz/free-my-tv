@@ -65,6 +65,7 @@ final class Config {
 
     static final String TMDB_KEY = "$(prop tmdb_key '')";
     static final String WATCHMODE_KEY = "$(prop watchmode_key '')";
+    static final String BRAPI_KEY = "$(prop brapi_key '')";
     static final String TMDB_REGION = "$REGION";
     static final String LATITUDE = "$LAT";
     static final String LONGITUDE = "$LON";

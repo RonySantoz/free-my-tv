@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.util.SparseArray;
 
@@ -23,6 +24,13 @@ final class Glyphs {
 
     /** Draws the coin centered at (cx, cy), sized to the text next to it (cap height `cap`), in `color`. */
     static void coin(Context context, Canvas c, String coin, float cx, float cy, float cap, int color) {
+        if (!logo(coin)) {
+            // A ticker (the funds on the home screen) is written in bold, centered on the same line as a logo would be.
+            TEXT.setTextSize(cap / 0.7f);
+            TEXT.setColor(color);
+            c.drawText(coin, cx, cy + cap / 2, TEXT);
+            return;
+        }
         Bitmap b = bitmap(context, coin, frame(cap));
         if (b == null) return;
         PAINT.setColor(color);
@@ -31,8 +39,23 @@ final class Glyphs {
 
     /** Width the symbol takes up (for laying out the line). */
     static float width(Context context, String coin, float cap) {
+        if (!logo(coin)) {
+            TEXT.setTextSize(cap / 0.7f);
+            return TEXT.measureText(coin);
+        }
         Bitmap b = bitmap(context, coin, frame(cap));
         return b == null ? 0 : b.getWidth();
+    }
+
+    private static final Paint TEXT = new Paint(Paint.ANTI_ALIAS_FLAG);
+    static {
+        TEXT.setTypeface(Typeface.DEFAULT_BOLD);
+        TEXT.setTextAlign(Paint.Align.CENTER);
+    }
+
+    /** The four logos, by symbol; anything else is a ticker. */
+    private static boolean logo(String coin) {
+        return "BTC".equals(coin) || "ETH".equals(coin) || "SOL".equals(coin) || "USDT".equals(coin);
     }
 
     /** Side of the 32-unit frame: the largest symbol (the ETH diamond) ends up ~1.3 × the cap height. */
