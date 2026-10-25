@@ -1,0 +1,31 @@
+name: Build APK
+
+# Builds FreeMyTV.apk on demand (Actions → Build APK → Run workflow) and keeps it as a downloadable artifact.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Google TV APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK (build-tools 34, android-34)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$RUNNER_TEMP/sdk" \
+            "build-tools;34.0.0" "platforms;android-34" > /dev/null
+          echo "ANDROID_HOME=$RUNNER_TEMP/sdk" >> "$GITHUB_ENV"
+      - name: Build
+        run: ./build.sh --generic
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FreeMyTV-apk
+          path: FreeMyTV.apk
+          if-no-files-found: error
