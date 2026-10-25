@@ -6,6 +6,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -35,9 +36,12 @@ import java.util.concurrent.Executors;
  * come from config.properties.
  */
 final class HomeData {
-    /** AUPO11 (fixed income) and ABTC11 (Bitcoin). Drawn as their tickers, see Glyphs. */
-    static final String[] COINS = {"AUPO11", "ABTC11"};
-    static final String[] COIN_NAMES = {"Fixed income", "Bitcoin"};
+    /**
+     * The quotes on the home screen, in this order: AUPO11 (fixed income) and ABTC11 (Bitcoin ETF), the Ibovespa, the
+     * dollar, the Selic rate and Bitcoin in dollars. Drawn as their tickers (Glyphs), BTC with its logo.
+     */
+    static final String[] COINS = {"AUPO11", "ABTC11", "IBOV", "USD", "SELIC", "BTC"};
+    static final String[] COIN_NAMES = {"Fixed income", "Bitcoin ETF", "Ibovespa", "Dollar", "Selic", "Bitcoin"};
     private static final String CURRENCY = Place.currency();
 
     // Both forecasts in one answer, the next 48 hours and today plus 5 days: Home Settings → Forecast switches without
@@ -55,9 +59,8 @@ final class HomeData {
     private static final long PRICES_EVERY = 5 * 60_000L, WEATHER_EVERY = 30 * 60_000L;
     interface Listener { void onData(); }
 
-    /** The funds on the screen: none without the brapi key. */
     static int coinCount() {
-        return Prefs.quotes() && !Config.BRAPI_KEY.isEmpty() ? active().length : 0;
+        return Prefs.quotes() ? active().length : 0;
     }
 
     private static volatile int[] activeCoins;
@@ -89,17 +92,79 @@ final class HomeData {
     }
 
     /**
-     * brapi.dev answers one ticker per request (a list is refused with HTTP 400), so each fund is asked for alone. The
-     * key goes in the Authorization header, never in the address.
+     * Every quote, as one JSON object by index: {"p": price, "c": change over 7 days in %}. Each source is asked on its
+     * own, so one that fails leaves only its own quotes out. brapi.dev answers one ticker per request (a list is refused
+     * with HTTP 400) and takes the key in the Authorization header, never in the address.
      */
     private static String getPrices() throws Exception {
-        JSONArray all = new JSONArray();
-        for (String coin : COINS) {
-            JSONArray results = new JSONObject(get("https://brapi.dev/api/quote/" + coin, "Bearer " + Config.BRAPI_KEY))
-                    .getJSONArray("results");
-            for (int i = 0; i < results.length(); i++) all.put(results.get(i));
+        JSONObject out = new JSONObject();
+        for (int k = 0; k < 2; k++) {
+            try {
+                fundQuote(out, k, COINS[k]);
+            } catch (Exception e) {
+                AppLog.w("prices " + COINS[k] + ": " + e.getMessage());
+            }
         }
-        return new JSONObject().put("results", all).toString();
+        try {
+            fundQuote(out, 2, "%5EBVSP");
+        } catch (Exception e) {
+            AppLog.w("prices IBOV: " + e.getMessage());
+        }
+        try {
+            // The dollar's official rate (PTAX, Banco Central): the last business days, the first one for the change.
+            JSONArray ptax = new JSONArray(get("https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados/ultimos/6?formato=json"));
+            put(out, 3, value(ptax, "valor"), changeOf(ptax, "valor"));
+        } catch (Exception e) {
+            AppLog.w("prices USD: " + e.getMessage());
+        }
+        try {
+            // The Selic target rate changes only at the Copom meetings, so it has no change to show.
+            JSONArray selic = new JSONArray(get("https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"));
+            put(out, 4, value(selic, "valor"), Double.NaN);
+        } catch (Exception e) {
+            AppLog.w("prices Selic: " + e.getMessage());
+        }
+        try {
+            // Bitcoin in dollars, daily candles: the last one is today's price, the first one is a week back.
+            JSONArray candles = new JSONArray(get("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=8"));
+            double first = Double.parseDouble(candles.getJSONArray(0).getString(4));
+            double last = Double.parseDouble(candles.getJSONArray(candles.length() - 1).getString(4));
+            put(out, 5, last, (last - first) / first * 100);
+        } catch (Exception e) {
+            AppLog.w("prices BTC: " + e.getMessage());
+        }
+        return out.toString();
+    }
+
+    /** A fund (or the Ibovespa) from brapi.dev: today's price and the change since the first day of the last 5 trading days. */
+    private static void fundQuote(JSONObject out, int k, String symbol) throws Exception {
+        JSONObject q = new JSONObject(get("https://brapi.dev/api/quote/" + symbol + "?range=5d&interval=1d", "Bearer " + Config.BRAPI_KEY))
+                .getJSONArray("results").getJSONObject(0);
+        double price = q.getDouble("regularMarketPrice");
+        double change = Double.NaN;
+        JSONArray history = q.optJSONArray("historicalDataPrice");
+        if (history != null && history.length() > 0) {
+            double first = history.getJSONObject(0).optDouble("close", Double.NaN);
+            if (first > 0) change = (price - first) / first * 100;
+        }
+        put(out, k, price, change);
+    }
+
+    private static void put(JSONObject out, int k, double price, double change) throws JSONException {
+        JSONObject o = new JSONObject().put("p", price);
+        if (!Double.isNaN(change)) o.put("c", change);
+        out.put(String.valueOf(k), o);
+    }
+
+    /** The last reading of a Banco Central series (its values are text, with a point as the decimal mark). */
+    private static double value(JSONArray series, String field) throws JSONException {
+        return Double.parseDouble(series.getJSONObject(series.length() - 1).get(field).toString());
+    }
+
+    private static double changeOf(JSONArray series, String field) throws JSONException {
+        double first = Double.parseDouble(series.getJSONObject(0).get(field).toString());
+        double last = value(series, field);
+        return (last - first) / first * 100;
     }
 
     static final class Weather {
@@ -216,19 +281,20 @@ final class HomeData {
     }
 
     private void parsePrices(String body) throws Exception {
-        JSONArray list = new JSONObject(body).getJSONArray("results");
+        JSONObject o = new JSONObject(body);
         int found = 0;
-        for (int i = 0; i < list.length(); i++) {
-            JSONObject o = list.getJSONObject(i);
-            String symbol = o.getString("symbol");
-            for (int k = 0; k < COINS.length; k++) {
-                if (!symbol.equals(COINS[k])) continue;
-                found++;
-                prices[k] = o.getDouble("regularMarketPrice");
-                changes[k] = o.optDouble("regularMarketChangePercent", Double.NaN);
+        for (int k = 0; k < COINS.length; k++) {
+            JSONObject q = o.optJSONObject(String.valueOf(k));
+            if (q == null) {   // this source didn't answer: its quote shows as a dash
+                prices[k] = Double.NaN;
+                changes[k] = Double.NaN;
+                continue;
             }
+            found++;
+            prices[k] = q.getDouble("p");
+            changes[k] = q.optDouble("c", Double.NaN);
         }
-        if (found == 0) pricesAt = 0;   // nothing usable came back: fetch again
+        if (found == 0) pricesAt = 0;   // nothing came back: fetch again
     }
 
     private static Weather parseWeather(String body) throws Exception {
@@ -436,14 +502,39 @@ final class HomeData {
     }
 
     /** "+1.2%" / "−0.8%" (a real minus sign); "+1,2 %" in the languages that space the percent sign. */
+    /** The 7-day change with an arrow: "↑ 1,2%" or "↓ 0,8%". */
     static String change(double v) {
         if (Double.isNaN(v)) return "";
         return Ui.once("change", v, () -> {
             NumberFormat f = NumberFormat.getPercentInstance(locale());
             f.setMinimumFractionDigits(1);
             f.setMaximumFractionDigits(1);
-            return (v >= 0 ? "+" : "−") + f.format(Math.abs(v) / 100);
+            return (v >= 0 ? "↑ " : "↓ ") + f.format(Math.abs(v) / 100);
         });
+    }
+
+    /** The arrow of the 7-day change, for the quotes row: " ↑" or " ↓", nothing without a change. */
+    static String arrow(double v) {
+        if (Double.isNaN(v)) return "";
+        return v >= 0 ? " ↑" : " ↓";
+    }
+
+    /** A quote in its own unit: R$ with cents for the funds and the dollar, points for the Ibovespa, % for the Selic, US$ for Bitcoin. */
+    static String quote(int k, double v) {
+        if (Double.isNaN(v)) return "—";
+        switch (COINS[k]) {
+            case "IBOV": return number(v, 0) + " pts";
+            case "SELIC": return number(v, 2) + "%";
+            case "BTC": return "US$ " + number(v, 0);
+            default: return "R$ " + number(v, 2);
+        }
+    }
+
+    private static String number(double v, int digits) {
+        NumberFormat f = NumberFormat.getNumberInstance(locale());
+        f.setMinimumFractionDigits(digits);
+        f.setMaximumFractionDigits(digits);
+        return f.format(v);
     }
 
     static String hour(long at) {

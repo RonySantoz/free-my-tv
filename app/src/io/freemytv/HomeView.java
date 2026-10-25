@@ -1258,7 +1258,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             widths = new float[n];
             for (int i = 0; i < n; i++) {
                 prices[i] = all[coins[i]];
-                values[i] = HomeData.compact(prices[i]);
+                values[i] = HomeData.quote(coins[i], prices[i]) + HomeData.arrow(data.changes[coins[i]]);
                 glyphs[i] = Glyphs.width(getContext(), HomeData.COINS[coins[i]], cap);
                 widths[i] = text.measureText(values[i]);
             }
@@ -1727,9 +1727,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             textPricesAt = data.pricesAt;
             textMinute = minute;
             String stale = HomeData.staleness(data.pricesAt, 5 * 60_000L);
-            staleText = stale.isEmpty() ? Ui.tr("24h change") : Ui.trf("quotes|{ago}", "ago", stale);
+            staleText = stale.isEmpty() ? Ui.tr("7-day change") : Ui.trf("quotes|{ago}", "ago", stale);
             for (int i = 0; i < HomeData.COINS.length; i++) {
-                priceText[i] = HomeData.brl(data.prices[i]);
+                priceText[i] = HomeData.quote(i, data.prices[i]);
                 changeText[i] = HomeData.change(data.changes[i]);
             }
         }
@@ -1789,13 +1789,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawPrices(Canvas c, RectF r) {
         float x = r.left + 34 * k, right = r.right - 34 * k;
         refreshDrawerText();
-        c.drawText(Ui.tr("Crypto"), x, r.top + 54 * k, cardTitle);
+        c.drawText(Ui.tr("Markets"), x, r.top + 54 * k, cardTitle);
         c.drawText(staleText, right, r.top + 54 * k, cardDimRight);
         float cap = Ui.cap(cardText);
         int[] coins = HomeData.active();
         for (int j = 0; j < coins.length; j++) {
             int i = coins[j];
-            float base = r.top + (110 + 52 * j) * k, mid = base - cap / 2;
+            // Six rows in the card (the funds, the Ibovespa, the dollar, the Selic and Bitcoin): 34 px apart.
+            float base = r.top + (110 + 34 * j) * k, mid = base - cap / 2;
             float gw = Glyphs.width(getContext(), HomeData.COINS[i], cap);
             Glyphs.coin(getContext(), c, HomeData.COINS[i], x + 14 * k, mid, cap, tone(L_DIM, 0xCCFFFFFF));
             c.drawText(HomeData.coinName(i), x + Math.max(gw, 28 * k) / 2 + 30 * k, base, cardText);
@@ -1803,10 +1804,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             double change = data.changes[i];
             if (Double.isNaN(change)) continue;
             int color = change >= 0 ? tone(0xFF248A3D, UP_COLOR) : tone(0xFFD70015, DOWN_COLOR);
-            tmp.set(right - 108 * k, mid - 17 * k, right, mid + 17 * k);
+            tmp.set(right - 108 * k, mid - 14 * k, right, mid + 14 * k);
             fill.setShader(null);
             fill.setColor(Ui.alpha(color, 0.2f));
-            c.drawRoundRect(tmp, 17 * k, 17 * k, fill);
+            c.drawRoundRect(tmp, 14 * k, 14 * k, fill);
             changePaint.setColor(color);
             c.drawText(changeText[i], tmp.centerX(), mid + Ui.halfCap(changePaint), changePaint);
         }
@@ -2816,11 +2817,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The quotes card as TalkBack reads it: each coin with its price and 24 h change. */
     private String quotesText() {
-        StringBuilder s = new StringBuilder(Ui.tr("Crypto"));
+        StringBuilder s = new StringBuilder(Ui.tr("Markets"));
         String stale = HomeData.staleness(data.pricesAt, 5 * 60_000L);
-        s.append(", ").append(stale.isEmpty() ? Ui.tr("24h change") : Ui.trf("quotes|{ago}", "ago", stale)).append('.');
+        s.append(", ").append(stale.isEmpty() ? Ui.tr("7-day change") : Ui.trf("quotes|{ago}", "ago", stale)).append('.');
         for (int i : HomeData.active()) {
-            s.append(' ').append(HomeData.coinName(i)).append(' ').append(HomeData.brl(data.prices[i]));
+            s.append(' ').append(HomeData.coinName(i)).append(' ').append(HomeData.quote(i, data.prices[i]));
             if (!Double.isNaN(data.changes[i])) s.append(", ").append(HomeData.change(data.changes[i]));
             s.append('.');
         }

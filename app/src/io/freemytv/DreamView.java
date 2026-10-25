@@ -547,7 +547,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             float[] glyphs = new float[n];
             float total = spacing * (n - 1);
             for (int i = 0; i < n; i++) {
-                values[i] = HomeData.compact(data.prices[coins[i]]);
+                values[i] = HomeData.quote(coins[i], data.prices[coins[i]]) + HomeData.arrow(data.changes[coins[i]]);
                 glyphs[i] = Glyphs.width(getContext(), HomeData.COINS[coins[i]], cap);
                 total += glyphs[i] + gap + cornerQuote.measureText(values[i]);
             }
@@ -790,7 +790,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         String[] values = new String[HomeData.coinCount()];
         float total = spacing * (values.length - 1);
         for (int i = 0; i < values.length; i++) {
-            values[i] = HomeData.price(data.prices[coins[i]]);
+            values[i] = HomeData.quote(coins[i], data.prices[coins[i]]) + HomeData.arrow(data.changes[coins[i]]);
             total += Glyphs.width(getContext(), HomeData.COINS[coins[i]], cap) + gap + quotePaint.measureText(values[i]);
         }
         float x = cx - total / 2, base = h - 92 * k;
